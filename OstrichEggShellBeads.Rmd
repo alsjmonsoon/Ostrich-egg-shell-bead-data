@@ -1,0 +1,186 @@
+## This document gives examples how we made PCA, biplot using ggplot in R, which we have used for making figures in our manuscript. We also show examples how to conduct MANOVA and ANOVA tests. Please note, these codes are designed to work with our working dataset (not the supplementary data), so you may need to change the code to fit your own dataset. 
+
+## load relavant libraries
+```{r}
+library(readxl)
+library(plyr)
+library(reshape2)
+library(MASS)
+library(vegan)
+library(ellipse)
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+library(tidyverse)
+
+```
+
+```{r}
+#Eead the data
+df<- read_excel("data.xlsx",sheet="1",guess_max = 10000)
+
+#Filter the most important parameters, for examples
+df1<-df%>%select(Site, Region, Phases, Diameter, Thickness, Aperture.Diameter)
+
+#Change character to factor
+df1 <- mutate_if(df1, is.character, as.factor)
+
+str(df1)
+
+#Filter data that have all three parameters
+df2<-df1[complete.cases(df1),]
+
+
+df2i.S<-df2%>%select (Diameter, Aperture.Diameeter, Thickness) #Select the dependent variables from the overall data
+
+
+# 2x2 Factorial MANOVA with 3 Dependent Variables.
+
+#test whehter bead characteristics were influenced by region or phases or their interaction
+
+fit1<- manova(as.matrix(df2i.S)~Region+Phases+Region*Phases, data=df2) 
+summary(fit1, test="Pillai",tol=0)
+print(fit1)
+library(stats)
+summary.aov(fit) #ANOVA test show which factors are important. report these data.
+```
+
+##Bead characteristic changes in each region throughout last 50,000 years (MANOVA and ANOVA)
+```{r}
+#remove outlier (i.e. diameter >11 and aperture diameter >5), only one outlier from each, both from Tanzania, eastern Africa. These two beads are removed from the remaining caculations. 
+
+df2<-df2%>%filter(Average.Diameter<11 & Aperture.Diameter.Average<5)
+
+#comparing phase II and III for southern Africa using Manova and ANOVA
+
+SA<-df2%>%
+  filter(Region=="Southern Africa")%>% # this is to compare for the entir time
+  filter(!Phases==1 & !Phases==5) # this is to compare phase 3 and 4
+
+manova_sa<-manova(as.matrix(SA[,6:8])~SA$Phases) # test how diameters, thickness and aperture diameters are different through time in southern Africa. In the data set I worked on, these paramters are in the column 6 to column 8. Please adjust the column accordingly.
+summary(manova_sa, test="Pillai")
+print(manova_sa)
+library(stats)
+summary.aov(manova_sa) # look to see which paramter differ
+
+#comparing all phases for eastern Africa using MANOVA and ANOVA
+
+EA<-df2%>%
+  filter(Region==2)%>%
+
+manova_ea<-manova(as.matrix(EA[,6:8])~EA$Phases) # # test how diameters, thickness and aperture diameters are different through time in southern Africa. Depending on which columns are your bead parameters, column numbers may change in the subset data.
+summary(manova_ea, test="Pillai")
+print(manova_ea)
+library(stats)
+summary.aov(manova_ea) # look to see which paramter differ
+
+```
+
+
+##Phase comparison between two regions using PCA 
+```{r}
+
+# We seperated our data into four different phases: 50-33ka; 33-19ka, 19-11.6ka, 11.6-2.0ka, 2.0ka-present, representing phase 1, 2, 3, 4, and 5 respectively. Note, there are a big data gap between 33-19ka in southern Africa.
+
+#Phase 5
+
+df1.P5<-df2%>%filter(Phases==5) #select phase 5 only
+df1.P5a<-df1.P5%>%select(6:8) # check 
+
+nm.pca5<-prcomp(df1.P5a,center = TRUE, scale=TRUE)
+summary(nm.pca5)
+
+PCAloadings5 <- data.frame(Variables = rownames(nm.pca5$rotation), nm.pca5$rotation)
+
+# Extract PC axes for plotting
+PCAvalues5 <- data.frame(Region = df1.P5$Region, nm.pca5$x)
+
+p5<- ggplot(PCAvalues5, aes(x=PC1, y=PC2)) +
+  theme_bw(base_size = 16) + background_grid(minor='none') +
+      geom_segment(data = PCAloadings5, aes(x = 0, y = 0, xend = (PC1*6),
+     yend = (PC2*6)), arrow = arrow(length = unit(1/2, "picas")),
+     color = "grey40") +
+      stat_ellipse(data = PCAvalues5,aes(x=PC1, y=PC2,fill=Region),geom="polygon", alpha=0.5,level=0.90,show.legend = FALSE) +
+  annotate("text", x = (PCAloadings5$PC1*6.6), y = (PCAloadings5$PC2*6.6),
+     label = PCAloadings5$Variables) +
+  geom_point(aes(x=PC1, y=PC2, color=Region,shape=Region),size=3) +
+ theme(legend.title = element_blank()) +
+  scale_x_continuous(breaks=seq(-5,10,2.5))+
+  scale_y_continuous(breaks=seq(-5,5,2.5))+
+  ggtitle("Phase5: 50-33ka")
+  
+##continue on to for each Phase until you have done it for all five phases. Once you made for all phases, you can put them together.
+
+```
+
+#comparison between two regions using only diamter and aperture diameter for each phases (MANVOA and ANOVA)
+```{r}
+
+#phase 3, 4, 5 and 1
+df4<-df1%>%select(-Average.Thickness)%>%
+  filter (Phases==3) #
+
+str(df4)
+
+manova_p1<-manova(as.matrix(df4[,7:8])~df4$Region) #depending on which columns "Diameter" or "Aperture Diameter" are located, you many need to change the column numbers.
+summary(manova_p1, test="Pillai")
+print(manova_p1)
+library(stats)
+summary.aov(manova_p1)
+
+# repeat this step for the rest of the phases.
+
+```
+
+
+#Plot time and bead parameters (for example, diameter here)
+```{r}
+df5<- read_excel("your data.xlsx",sheet="1")
+df6<-df5%>%select(Site, Region,Phases,Approx.Dates,Average.Diameter, Average.Thickness,Aperture.Diameter.Average)
+df6[, 1:3]<-mutate_if(df6[,1:3], is.numeric, as.factor)
+
+str(df6)
+
+SA<-df6%>%filter(Region=="1")%>%filter(Phases=="2")
+EA<-df6%>%filter(Region=="2")%>%filter(Phases=="2")
+
+
+SA1<-SA%>%
+   group_by(Phases)%>%
+  summarize(Mean = mean(Diameter, na.rm=TRUE))
+
+EA1<-EA%>%
+group_by(Phases)%>%
+  summarize(Mean = mean(Diameter, na.rm=TRUE))
+
+
+# here we used the default gam smooth function as sample numbers are > 1000, and also used default k, as our purpose is just to smooth the lines.
+
+#Diameter
+df7<-df6%>%select(Approx.Dates, Average.Diameter)
+df7<-df7[complete.cases(df7),]
+
+#total of 1516 of data points
+diameter<-ggplot(df7,  aes(x=Approx.Dates,y=Average.Diameter,colour=Region,group=Region,shape=Region,fill=Region))+
+#  geom_line(position=pd)+
+  geom_point(size=2)+
+  #stat_smooth(aes(group = Region), method = "lm", se = FALSE)
+ stat_smooth(mapping=aes(color=Region), method="gam", formula=y~s(x), size=2)+
+  theme_bw(base_size = 16) +
+  background_grid(minor='none') +
+ #scale_x_continuous(limits=c(0,50000))+
+ scale_y_continuous(limits=c(2.5,12))+
+  xlab("Age (year BP)") + 
+  ylab("Diameter (mm)")+
+  theme(legend.position="top",legend.text = element_text(size=rel(1)),legend.title =element_blank())+
+  theme(axis.text.x=element_text(size=rel(1.2)),axis.text.y=element_text(size=rel(1.2)), axis.title.x=element_text(size=18),axis.title.y=element_text(size=18))+
+  guides(fill=guide_legend(nrow=3,byrow=TRUE))
+  
+print(diameter)
+
+# Then make similar figures for Aperture diameter and Thickness
+              
+```
+
+# For splited violin plot for the data, please see https://stackoverflow.com/questions/35717353/split-violin-plot-with-ggplot2
+
